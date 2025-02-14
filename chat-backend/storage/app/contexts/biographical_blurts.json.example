@@ -1,0 +1,12 @@
+[
+    {
+        "id": 1,
+        "keywords": ["ocean", "Maritimes", "Halifax"],
+        "thought": "A thought that involves the ocean, Maritimes, and Halifax."
+    },
+    {
+        "id": 2,
+        "keywords": ["fine arts", "art school", "Halifax"],
+        "thought": "A thought that involves fine arts, art school, and Halifax."
+    },
+}

@@ -57,12 +57,15 @@ class ChatController extends Controller
                 'role' => 'system',
                 'content' => $languageInstruction . "\n\n" . $personalityConfig['system_message']['content']
             ],
-            // Add a language reinforcement message
             [
                 'role' => 'system',
                 'content' => $language === 'en'
                     ? "Remember: All responses must be in English."
                     : "Rappel: Toutes les réponses doivent être en français."
+            ],
+            [
+                'role' => 'system',
+                'content' => "IMPORTANT: When you see messages marked with [Biobot], these are automated insights. Always address the user's question, briefly acknowledge the Biobot's insight by relating it to your CV information."
             ],
             // Introduction message
             [
@@ -128,17 +131,18 @@ class ChatController extends Controller
 
             // Check AI response for biobot triggers
             $secondaryBiobotResponse = $this->biobotParser($aiResponse, $bioBotResponseIds);
-            if (isSet($secondaryBiobotResponse['content'])) {
+            if (isset($secondaryBiobotResponse['content'])) {
                 $responses[] = ['role' => 'assistant', 'content' => "[Biobot] " . $secondaryBiobotResponse['content']];
+                // Add the new biobot ID if it exists
+                if (isset($secondaryBiobotResponse['id'])) {
+                    $bioBotResponseIds[] = $secondaryBiobotResponse['id'];
+                }
             }
 
             // Return both messages and updated indices
             return response()->json([
                 'messages' => $responses,
-                'bioBotResponseIds' => array_merge(
-                    $bioBotResponseIds,
-                    array_map(fn($resp) => $resp['id'], $secondaryBiobotResponse)
-                )
+                'bioBotResponseIds' => $bioBotResponseIds
             ]);
 
         } catch (\Exception $e) {
@@ -151,26 +155,14 @@ class ChatController extends Controller
 
     private function biobotParser($input, $usedIds = [])
     {
-        $biobotResponse = [];
-        $biographicalBlurts = [
-            [
-                "id" => 1,
-                "keywords" => ["dream"],
-                "thought" => "Did you know that dreams have inspired many great inventions?"
-            ],
-            [
-                "id" => 2,
-                "keywords" => ["memory"],
-                "thought" => "Memories are like echoes of time. Some fade, some remain crystal clear."
-            ],
-            [
-                "id" => 3,
-                "keywords" => ["poetry"],
-                "thought" => "A thought, a whisper, a fragment of a dream—that is poetry."
-            ]
-        ];
+        // Load biographical blurts from the JSON file
+        $biographicalBlurts = [];
+        if (Storage::disk('contexts')->exists('biographical_blurts.json')) {
+            $biographicalBlurts = json_decode(Storage::disk('contexts')->get('biographical_blurts.json'), true);
+        }
+        Log::info('Biographical blurts: ', $biographicalBlurts);
 
-        // Remove session-related code and use passed in usedIndices
+        $biobotResponse = [];
         Log::info('Using biobot indices: ', $usedIds);
 
         foreach ($biographicalBlurts as $item) {

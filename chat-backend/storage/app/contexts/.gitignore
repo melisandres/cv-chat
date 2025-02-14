@@ -1,2 +1,4 @@
 *
 !.gitignore
+!biographical_blurts.json.example
+!default.txt.example
