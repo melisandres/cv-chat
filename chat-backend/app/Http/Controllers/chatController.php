@@ -69,17 +69,11 @@ class ChatController extends Controller
         }
     }
 
-    private function prepareAiMessages($userMessages, $personality, $language, $biobotResponse = null)
+    private function prepareAiMessages($userMessages, $personality, $language, $biobotResponse = null, $aiType = 'cvAi')
     {
-        $personalityConfig = config('ai_personalities');
+        $personalityConfig = config('ai_personalities')[$aiType];
         $languageConfig = $personalityConfig['language_instructions'][$language];
         
-        // Load context file
-        $contextContent = '';
-        if (Storage::disk('contexts')->exists("{$personality}_{$language}.txt")) {
-            $contextContent = Storage::disk('contexts')->get("{$personality}_{$language}.txt");
-        }
-
         $aiMessages = [
             // System messages
             [
@@ -90,26 +84,41 @@ class ChatController extends Controller
                 'role' => 'system',
                 'content' => $languageConfig['reminder']
             ],
-            [
-                'role' => 'system',
-                'content' => $personalityConfig['biobot_instruction']
-            ],
-            // Introduction
-            [
-                'role' => 'assistant',
-                'content' => $languageConfig['introduction']
-            ],
-            // Context
-            [
-                'role' => 'assistant',
-                'content' => "Here is my reference information:\n\n" . $contextContent
-            ],
-            // User messages
-            ...$userMessages
         ];
 
-        // Add biobot response if present
-        if (isset($biobotResponse['content'])) {
+        // Add biobot instruction only for cvAi
+        if ($aiType === 'cvAi' && isset($personalityConfig['biobot_instruction'])) {
+            $aiMessages[] = [
+                'role' => 'system',
+                'content' => $personalityConfig['biobot_instruction']
+            ];
+        }
+
+        // Add introduction and context for cvAi
+        if ($aiType === 'cvAi') {
+            // Load context file
+            $contextContent = '';
+            if (Storage::disk('contexts')->exists("{$personality}_{$language}.txt")) {
+                $contextContent = Storage::disk('contexts')->get("{$personality}_{$language}.txt");
+            }
+
+            $aiMessages = array_merge($aiMessages, [
+                [
+                    'role' => 'assistant',
+                    'content' => $languageConfig['introduction']
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => "Here is my reference information:\n\n" . $contextContent
+                ]
+            ]);
+        }
+
+        // Add user messages
+        $aiMessages = array_merge($aiMessages, $userMessages);
+
+        // Add biobot response if present and if it's cvAi
+        if ($aiType === 'cvAi' && isset($biobotResponse['content'])) {
             $aiMessages[] = [
                 'role' => 'assistant',
                 'content' => "[Biobot] " . $biobotResponse['content']
