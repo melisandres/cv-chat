@@ -1,0 +1,12 @@
+[
+    {
+        "id": 1,
+        "keywords": ["ocean", "Maritimes", "Halifax"],
+        "thought": "A biographical detail that involves the ocean, Maritimes, and Halifax."
+    },
+    {
+        "id": 2,
+        "keywords": ["fine arts", "art school", "Halifax"],
+        "thought": "A biographical detail that involves fine arts, art school, and Halifax."
+    },
+]

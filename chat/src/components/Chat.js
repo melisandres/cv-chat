@@ -19,7 +19,14 @@ import createChatCompletion, { AI_PROVIDERS } from '../services/aiServices.js';
 const Chat = () => {
   const [language, setLanguage] = useState('en'); // Default to English
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: language === 'en' ? "Hello, I am Mélisandre's CV. I've come to life in order to represent her. I can tell you about her past professional experience, her education, and her skills as a full stack developper." : "Bonjour, je suis le CV de Mélisandre, donné souffle de vie pour la représenter. Je peux vous parler de ses expériences professionelles, de son éducation, et de ses compétences comme développeuse full stack." }
+    { role: 'assistant', content: language === 'en' 
+      ? "Hello, I am Mélisandre's CV. I've come to life in order to represent her. I can tell you about her past professional experience, her education, and her skills as a full stack developper." 
+      : "Bonjour, je suis le CV de Mélisandre, donné souffle de vie pour la représenter. Je peux vous parler de ses expériences professionelles, de son éducation, et de ses compétences comme développeuse full stack." 
+    },
+    { role: 'assistant', content: `[Biobot] ${language === 'en' 
+      ? "Pft... CVs. What do they really know anyway? I'm Mé's bio. I'm an array of facts, not like this guy, who uses artificial intelligence to pretend he's smart." 
+      : "Pff... les CVs. Qu'est-ce qu'ils savent vraiment ? Je suis la bio de Mé. Je suis un ensemble de faits, pas comme lui, qui utilise l'intelligence artificielle pour prétendre être intelligent."}` 
+    }
   ]);
   const [input, setInput] = useState('');
   const [provider, setProvider] = useState(AI_PROVIDERS.OPENAI);
@@ -43,8 +50,6 @@ const Chat = () => {
     setInput('');
     setIsLoading(true);
 
- 
-
     try {
       const response = await createChatCompletion(
         [...messages, userMessage],
@@ -61,20 +66,25 @@ const Chat = () => {
         setBioBotResponseIds(response.bioBotResponseIds);
       }
 
-      const addMessagesWithDelay = async (messages) => {
-        for (const message of messages) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          setMessages(prev => [...prev, message]);
-        }
-      };
+      if (response.messages && Array.isArray(response.messages)) {
+        const addMessagesWithDelay = async (messagesToAdd) => {
+          for (const message of messagesToAdd) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            setMessages(prev => [...prev, message]);
+          }
+        };
 
-      addMessagesWithDelay(response.messages);
+        await addMessagesWithDelay(response.messages);
+      } else {
+        console.error('Invalid response format:', response);
+        throw new Error('Invalid response format from server');
+      }
     } catch (error) {
       console.error('Error in handleSend:', error);
       setMessages(prev => [...prev, { 
         role: 'assistant', 
         content: language === 'en' ? 'Sorry, I encountered an error. Please try again.' : 'Désolé, j\'ai rencontré une erreur. Veuillez réessayer.' 
-        }]);
+      }]);
     }
 
     setIsLoading(false);
@@ -82,11 +92,15 @@ const Chat = () => {
 
   const handleLanguageChange = (newLanguage) => {
     setLanguage(newLanguage);
-    if (messages.length === 1) { // Only change the intro message if there's exactly one message
+    if (messages.length === 2) { // Changed from 1 to 2 to account for both intro messages
       setMessages(prevMessages => {
         const updatedMessages = [...prevMessages];
         updatedMessages[0].content = newLanguage === 'en' 
-          ? "Hello, I am Mélisandre's CV. I've come to life in order to represent her. I can tell you about her past professional experience, her education, and her skills as a full stack developper." : "Bonjour, je suis le CV de Mélisandre, donné souffle de vie pour la représenter. Je peux vous parler de ses expériences professionelles, de son éducation, et de ses compétences comme développeuse full stack.";
+          ? "Hello, I am Mélisandre's CV. I've come to life in order to represent her. I can tell you about her past professional experience, her education, and her skills as a full stack developper." 
+          : "Bonjour, je suis le CV de Mélisandre, donné souffle de vie pour la représenter. Je peux vous parler de ses expériences professionelles, de son éducation, et de ses compétences comme développeuse full stack.";
+        updatedMessages[1].content = `[Biobot] ${newLanguage === 'en'
+          ? "Pft... CVs. What do they really know anyway? I'm Mé's bio. I'm an array of facts, not like this guy, who uses artificial intelligence to pretend he's smart."
+          : "Pff... les CVs. Qu'est-ce qu'ils savent vraiment ? Je suis la bio de Mé. Je suis un ensemble de faits, pas comme lui, qui utilise l'intelligence artificielle pour prétendre être intelligent."}`;
         return updatedMessages;
       });
     }

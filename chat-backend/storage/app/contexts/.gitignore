@@ -1,4 +1,6 @@
 *
 !.gitignore
-!biographical_blurts.json.example
-!default.txt.example
+!biographical_blurts_en.json.example
+!biographical_blurts_fr.json.example
+!default_en.txt.example
+!default_fr.txt.example

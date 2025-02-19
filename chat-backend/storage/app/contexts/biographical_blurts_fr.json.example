@@ -1,0 +1,12 @@
+[
+    {
+        "id": 1,
+        "keywords": ["ocean", "Maritimes", "Halifax"],
+        "thought": "Une pensée qui implique l'océan, les Maritimes et Halifax."
+    },
+    {
+        "id": 2,
+        "keywords": ["beaux-arts", "école d'art", "Halifax"],
+        "thought": "Une pensée qui implique les beaux-arts, l'école d'art et Halifax."
+    },
+]

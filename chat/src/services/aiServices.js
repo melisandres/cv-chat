@@ -34,12 +34,36 @@ const createChatCompletion = async (
       bioBotResponseIds
     });
 
+    // Add response data logging
+    console.log('Raw API Response:', response.data);
+
+    // If the response contains HTML error messages, extract the JSON part
+    let jsonData = response.data;
+    if (typeof response.data === 'string' && response.data.includes('{')) {
+      const jsonStart = response.data.indexOf('{');
+      const jsonEnd = response.data.lastIndexOf('}') + 1;
+      try {
+        jsonData = JSON.parse(response.data.slice(jsonStart, jsonEnd));
+      } catch (e) {
+        console.error('Failed to parse JSON from response:', e);
+        throw new Error('Invalid JSON in response');
+      }
+    }
+
+    console.log('Parsed Response Data:', jsonData);
+
+    // Check if jsonData has the expected properties
+    if (!jsonData || (!jsonData.messages && !jsonData.bioBotResponseIds)) {
+      console.error('Invalid response structure:', jsonData);
+      throw new Error('Invalid response structure from server');
+    }
+
     return {
-      messages: response.data.messages,
-      bioBotResponseIds: response.data.bioBotResponseIds
+      messages: jsonData.messages || [],
+      bioBotResponseIds: jsonData.bioBotResponseIds || []
     };
   } catch (error) {
-    console.error('Chat API Error:', error.response || error);
+    console.error('Chat API Error:', error.response?.data || error);
     throw error;
   }
 };

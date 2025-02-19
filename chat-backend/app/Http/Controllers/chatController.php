@@ -21,13 +21,14 @@ class ChatController extends Controller
         $language = $request->input('language', 'en');
         $bioBotResponseIds = $request->input('bioBotResponseIds', []);
 
-        Log::info('Received biobot indices: ', $bioBotResponseIds);
 
         $responses = [];
+
+        //HANDLE BIOBOT FIRST RESPONSE WINDOW
         
         // Check user's message for biobot triggers
         $lastUserMessage = end($userMessages)['content'] ?? '';
-        $biobotResponse = $this->biobotParser($lastUserMessage, $bioBotResponseIds);
+        $biobotResponse = $this->biobotParser($lastUserMessage, $bioBotResponseIds, $language);
         
         // Handle the biobot response content
         if(isSet($biobotResponse['content']) && isSet($biobotResponse['id'])) {
@@ -37,100 +38,15 @@ class ChatController extends Controller
             $bioBotResponseIds[] = $biobotResponse['id'];
         }
 
-        // Get personality configuration from config file
-        $personalityConfig = config('ai_personalities');
-        
-        // Load context file
-        $contextContent = '';
-        if (Storage::disk('contexts')->exists("{$personality}.txt")) {
-            $contextContent = Storage::disk('contexts')->get("{$personality}.txt");
-        }
-
-        // Create a more explicit language instruction
-        $languageInstruction = $language === 'en' 
-            ? "IMPORTANT: You must respond in English only. This is a strict requirement."
-            : "IMPORTANT: Vous devez répondre en français uniquement. C'est une exigence stricte.";
-
-        // Prepare messages for AI
-        $aiMessages = [
-            [
-                'role' => 'system',
-                'content' => $languageInstruction . "\n\n" . $personalityConfig['system_message']['content']
-            ],
-            [
-                'role' => 'system',
-                'content' => $language === 'en'
-                    ? "Remember: All responses must be in English."
-                    : "Rappel: Toutes les réponses doivent être en français."
-            ],
-            [
-                'role' => 'system',
-                'content' => "IMPORTANT: When you see messages marked with [Biobot], these are automated insights. Always address the user's question, briefly acknowledge the Biobot's insight by relating it to your CV information."
-            ],
-            // Introduction message
-            [
-                'role' => 'assistant',
-                'content' => $language === 'en' 
-                    ? "Hello, I am Mélisandre's CV. I've come to life in order to represent her."
-                    : "Bonjour, je suis le CV de Mélisandre, donné souffle de vie pour la représenter."
-            ],
-            // Context message provides the reference data
-            [
-                'role' => 'assistant',
-                'content' => "Here is my reference information:\n\n" . $contextContent
-            ],
-            // User's messages
-            ...$userMessages
-        ];
-
-        // Log the prepared messages for debugging
- /*        Log::info('Prepared messages for AI', [
-            'system_message' => $messages[0]['content'],
-            'language_setting' => $language
-        ]); */
-
-        // Add biobot response to AI context if there are any
-        if (isSet($biobotResponse['content'])) {
-            $aiMessages[] = [
-                'role' => 'assistant',
-                'content' => "[Biobot] " . $biobotResponse['content']
-            ];
-        }
-
-/*         // Limit the number of messages to avoid large payloads
-        $messages = array_slice($messages, -10); */
-
-        $apiKey = $provider === 'openai' 
-            ? env('OPENAI_API_KEY') 
-            : env('DEEPSEEK_API_KEY');
-        
-        $apiUrl = $provider === 'openai' ? $this->openaiUrl : $this->deepseekUrl;
-
-        $params = array_merge([
-            'model' => $provider === 'openai' ? 'gpt-3.5-turbo' : 'deepseek-chat',
-            'messages' => $aiMessages,
-            'temperature' => 0.7,  
-            'max_tokens' => 100,
-        ], $parameters);
-
         try {
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $apiKey,
-                'Content-Type' => 'application/json',
-            ])->post($apiUrl, $params);
+            //HANDLE PRIMARY AI RESPONSE WINDOW
+            $aiMessages = $this->prepareAiMessages($userMessages, $personality, $language, $biobotResponse);
+            $aiResponse = $this->cvAi($aiMessages, $provider, $parameters);
+            $responses[] = ['role' => 'assistant', 'content' => $aiResponse];
 
-            if (isset($response['choices']) && count($response['choices']) > 0) {
-                $aiResponse = $response['choices'][0]['message']['content'];
-                $responses[] = ['role' => 'assistant', 'content' => $aiResponse];
-            } else {
-                Log::error('Unexpected API response structure: ' . json_encode($response->json()));
-                return response()->json([
-                    'error' => 'Unexpected response from AI provider.'
-                ], 500);
-            }
-
+            // HANDLE SECONDARY BIOBOT RESPONSE WINDOW
             // Check AI response for biobot triggers
-            $secondaryBiobotResponse = $this->biobotParser($aiResponse, $bioBotResponseIds);
+            $secondaryBiobotResponse = $this->biobotParser($aiResponse, $bioBotResponseIds, $language);
             if (isset($secondaryBiobotResponse['content'])) {
                 $responses[] = ['role' => 'assistant', 'content' => "[Biobot] " . $secondaryBiobotResponse['content']];
                 // Add the new biobot ID if it exists
@@ -138,7 +54,7 @@ class ChatController extends Controller
                     $bioBotResponseIds[] = $secondaryBiobotResponse['id'];
                 }
             }
-
+            
             // Return both messages and updated indices
             return response()->json([
                 'messages' => $responses,
@@ -153,30 +69,108 @@ class ChatController extends Controller
         }
     }
 
-    private function biobotParser($input, $usedIds = [])
+    private function prepareAiMessages($userMessages, $personality, $language, $biobotResponse = null)
+    {
+        $personalityConfig = config('ai_personalities');
+        $languageConfig = $personalityConfig['language_instructions'][$language];
+        
+        // Load context file
+        $contextContent = '';
+        if (Storage::disk('contexts')->exists("{$personality}_{$language}.txt")) {
+            $contextContent = Storage::disk('contexts')->get("{$personality}_{$language}.txt");
+        }
+
+        $aiMessages = [
+            // System messages
+            [
+                'role' => 'system',
+                'content' => $languageConfig['primary'] . "\n\n" . $personalityConfig['system_message']['content']
+            ],
+            [
+                'role' => 'system',
+                'content' => $languageConfig['reminder']
+            ],
+            [
+                'role' => 'system',
+                'content' => $personalityConfig['biobot_instruction']
+            ],
+            // Introduction
+            [
+                'role' => 'assistant',
+                'content' => $languageConfig['introduction']
+            ],
+            // Context
+            [
+                'role' => 'assistant',
+                'content' => "Here is my reference information:\n\n" . $contextContent
+            ],
+            // User messages
+            ...$userMessages
+        ];
+
+        // Add biobot response if present
+        if (isset($biobotResponse['content'])) {
+            $aiMessages[] = [
+                'role' => 'assistant',
+                'content' => "[Biobot] " . $biobotResponse['content']
+            ];
+        }
+
+        return $aiMessages;
+    }
+
+    private function cvAi($messages, $provider = 'openai', $parameters = [])
+    {
+        $apiKey = $provider === 'openai' 
+            ? env('OPENAI_API_KEY') 
+            : env('DEEPSEEK_API_KEY');
+        
+        $apiUrl = $provider === 'openai' ? $this->openaiUrl : $this->deepseekUrl;
+
+        $params = array_merge([
+            'model' => $provider === 'openai' ? 'gpt-3.5-turbo' : 'deepseek-chat',
+            'messages' => $messages,
+            'temperature' => 0.7,  
+            'max_tokens' => 100,
+        ], $parameters);
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+        ])->post($apiUrl, $params);
+
+        if (!isset($response['choices']) || count($response['choices']) === 0) {
+            Log::error('Unexpected API response structure: ' . json_encode($response->json()));
+            throw new \Exception('Unexpected response from AI provider.');
+        }
+
+        return $response['choices'][0]['message']['content'];
+    }
+
+    private function biobotParser($input, $usedIds = [], $language)
     {
         // Load biographical blurts from the JSON file
         $biographicalBlurts = [];
-        if (Storage::disk('contexts')->exists('biographical_blurts.json')) {
-            $biographicalBlurts = json_decode(Storage::disk('contexts')->get('biographical_blurts.json'), true);
+        if (Storage::disk('contexts')->exists('biographical_blurts_' . $language . '.json')) {
+            $biographicalBlurts = json_decode(Storage::disk('contexts')->get('biographical_blurts_' . $language . '.json'), true);
         }
-        Log::info('Biographical blurts: ', $biographicalBlurts);
+        /* Log::info('Biographical blurts: ', $biographicalBlurts); */
 
         $biobotResponse = [];
-        Log::info('Using biobot indices: ', $usedIds);
+        /* Log::info('Using biobot indices: ', $usedIds); */
 
         foreach ($biographicalBlurts as $item) {
             // Skip this entire biographical blurt if ID was used
             if (in_array($item['id'], $usedIds)) {
-                Log::info('Biobot ID ' . $item['id'] . ' already used');
+                /* Log::info('Biobot ID ' . $item['id'] . ' already used'); */
                 continue;
             }
 
             $keywordFound = false;
             foreach ($item['keywords'] as $keyword) {
-                Log::info('Checking keyword: ' . $keyword);
+                /* Log::info('Checking keyword: ' . $keyword); */
                 if (stripos($input, $keyword) !== false) {
-                    Log::info('Keyword found in input');
+                    /* Log::info('Keyword found in input'); */
                     $biobotResponse = [
                         'id' => $item['id'],
                         'content' => $item['thought']
@@ -193,18 +187,18 @@ class ChatController extends Controller
         return $biobotResponse;
     }
 
-    public function testAiPayload(Request $request)
+    /* public function testAiPayload(Request $request)
     {
         // Get basic config
         $personalityConfig = config('ai_personalities');
         $personality = $request->input('personality', 'default');
         
         // Debug file path information
-        $contextPath = storage_path("app/contexts/{$personality}.txt");
-        $fileExists = Storage::disk('contexts')->exists("{$personality}.txt");
+        $contextPath = storage_path("app/contexts/{$personality}_{'en'}.txt");
+        $fileExists = Storage::disk('contexts')->exists("{$personality}_{'en'}.txt");
 
         //biobotparser
-        $biobotMessages = $this->biobotParser('I have a dream');
+        $biobotMessages = $this->biobotParser('I have a dream', [], 'en');
 
         // Merge Biobot messages with the user conversation
         $AImessages = array_merge(['role' => 'biobot', 'content' => 'Hello, who are ...'], $biobotMessages);
@@ -212,7 +206,7 @@ class ChatController extends Controller
         // Try to get context file content
         $contextContent = '';
         if ($fileExists) {
-            $contextContent = Storage::disk('contexts')->get("{$personality}.txt");
+            $contextContent = Storage::disk('contexts')->get("{$personality}_{'en'}.txt");
         }
 
         // Create system message with context
@@ -252,5 +246,5 @@ class ChatController extends Controller
                 'storage_directories' => Storage::disk('contexts')->directories(),
             ]
         ], 200, [], JSON_PRETTY_PRINT);
-    }
+    } */
 }
