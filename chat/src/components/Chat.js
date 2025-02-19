@@ -14,7 +14,8 @@ import {
   FormControlLabel,
   Radio
 } from '@mui/material';
-import createChatCompletion, { AI_PROVIDERS } from '../services/aiServices.js';
+import { handleChatResponses } from '../services/aiServices.js';
+import { AI_PROVIDERS } from '../services/aiServices.js';
 
 const Chat = () => {
   const [language, setLanguage] = useState('en'); // Default to English
@@ -51,7 +52,7 @@ const Chat = () => {
     setIsLoading(true);
 
     try {
-      const response = await createChatCompletion(
+      await handleChatResponses(
         [...messages, userMessage],
         provider,
         {
@@ -59,26 +60,10 @@ const Chat = () => {
           temperature: 0.7,
         },
         language,
-        bioBotResponseIds
+        bioBotResponseIds,
+        setMessages,
+        setBioBotResponseIds
       );
-
-      if (response.bioBotResponseIds) {
-        setBioBotResponseIds(response.bioBotResponseIds);
-      }
-
-      if (response.messages && Array.isArray(response.messages)) {
-        const addMessagesWithDelay = async (messagesToAdd) => {
-          for (const message of messagesToAdd) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            setMessages(prev => [...prev, message]);
-          }
-        };
-
-        await addMessagesWithDelay(response.messages);
-      } else {
-        console.error('Invalid response format:', response);
-        throw new Error('Invalid response format from server');
-      }
     } catch (error) {
       console.error('Error in handleSend:', error);
       setMessages(prev => [...prev, { 

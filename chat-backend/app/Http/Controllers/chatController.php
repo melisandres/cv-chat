@@ -196,6 +196,39 @@ class ChatController extends Controller
         return $biobotResponse;
     }
 
+    public function biobotResponse(Request $request)
+    {
+        $input = $request->input('input');
+        $bioBotResponseIds = $request->input('bioBotResponseIds', []);
+        $language = $request->input('language', 'en');
+
+        $biobotResponse = $this->biobotParser($input, $bioBotResponseIds, $language);
+
+        if (isset($biobotResponse['id'])) {
+            $bioBotResponseIds[] = $biobotResponse['id']; // Add the new ID to the array
+        }
+
+        return response()->json([
+            'biobotResponse' => $biobotResponse,
+            'bioBotResponseIds' => $bioBotResponseIds
+        ]);
+    }
+
+    public function cvAiResponse(Request $request)
+    {
+        $messages = $request->input('messages', []);
+        $provider = $request->input('provider', 'openai');
+        $parameters = $request->input('parameters', []);
+        $language = $request->input('language', 'en');
+
+        $aiMessages = $this->prepareAiMessages($messages, 'default', $language);
+        $aiResponse = $this->cvAi($aiMessages, $provider, $parameters);
+
+        return response()->json([
+            'aiResponse' => $aiResponse
+        ]);
+    }
+
     /* public function testAiPayload(Request $request)
     {
         // Get basic config

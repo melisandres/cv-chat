@@ -68,4 +68,87 @@ const createChatCompletion = async (
   }
 };
 
+const extractJsonData = (responseData) => {
+  let jsonData = responseData;
+  if (typeof responseData === 'string' && responseData.includes('{')) {
+    const jsonStart = responseData.indexOf('{');
+    const jsonEnd = responseData.lastIndexOf('}') + 1;
+    try {
+      jsonData = JSON.parse(responseData.slice(jsonStart, jsonEnd));
+    } catch (e) {
+      console.error('Failed to parse JSON from response:', e);
+      throw new Error('Invalid JSON in response');
+    }
+  }
+  return jsonData;
+};
+
+export const getBiobotResponse = async (input, bioBotResponseIds = [], language = 'en') => {
+  try {
+    const response = await api.post('/biobot-response', {
+      input,
+      bioBotResponseIds,
+      language
+    });
+
+    // Use the utility function to extract JSON data
+    return extractJsonData(response.data);
+  } catch (error) {
+    console.error('Biobot API Error:', error.response?.data || error);
+    throw error;
+  }
+};
+
+export const getCvAiResponse = async (messages, provider = AI_PROVIDERS.OPENAI, parameters = {}, language = 'en') => {
+  try {
+    const response = await api.post('/cvai-response', {
+      messages,
+      provider,
+      parameters,
+      language
+    });
+
+    // Use the utility function to extract JSON data
+    return extractJsonData(response.data);
+  } catch (error) {
+    console.error('cvAi API Error:', error.response?.data || error);
+    throw error;
+  }
+};
+
+export const handleChatResponses = async (
+  messages, 
+  provider, 
+  parameters, 
+  language, 
+  bioBotResponseIds, 
+  updateMessages, 
+  updateBioBotResponseIds
+) => {
+  try {
+    console.log('Sending request to getBiobotResponse...');
+    const lastUserMessage = messages[messages.length - 1].content;
+    const biobotResponse = await getBiobotResponse(lastUserMessage, bioBotResponseIds, language);
+
+    if (biobotResponse.biobotResponse && biobotResponse.biobotResponse.content) {
+      console.log('Biobot response received:', biobotResponse.biobotResponse.content);
+      updateMessages(prev => [...prev, { role: 'assistant', content: `[Biobot] ${biobotResponse.biobotResponse.content}` }]);
+      updateBioBotResponseIds(biobotResponse.bioBotResponseIds);
+    } else {
+      console.log('No valid biobot response received.');
+    }
+
+    console.log('Sending request to getCvAiResponse...');
+    const cvAiResponse = await getCvAiResponse(messages, provider, parameters, language);
+
+    if (cvAiResponse.aiResponse) {
+      console.log('cvAi response received:', cvAiResponse.aiResponse);
+      updateMessages(prev => [...prev, { role: 'assistant', content: cvAiResponse.aiResponse }]);
+    }
+  } catch (error) {
+    console.error('Error in handleChatResponses:', error);
+    throw error;
+  }
+};
+
 export default createChatCompletion;
