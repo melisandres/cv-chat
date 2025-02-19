@@ -17,23 +17,58 @@ import {
 import { handleChatResponses } from '../services/aiServices.js';
 import { AI_PROVIDERS } from '../services/aiServices.js';
 
+// Define constants for messages
+const CV_INTRO_1 = {
+  en: "Hello, I am Mélisandre's CV. I've come to life in order to represent her.",
+  fr: "Bonjour, je suis le CV de Mélisandre, donné souffle de vie pour la représenter."
+};
+
+const BIOBOT_INTRO = {
+  en: "Pft... CVs. What do they really know anyway? I'm Mé's bio. I'm an array of facts, not like this guy, who uses artificial intelligence to pretend he's smart.",
+  fr: "Pff... les CVs. Qu'est-ce qu'ils savent vraiment? Je suis la bio de Mé. Je suis un ensemble de faits, pas comme lui, qui utilise l'intelligence artificielle pour prétendre être intelligent."
+};
+
+const CV_INTRO_2 = {
+  en: "Don't be fooled, bios are not serious. I can tell you about her past professional experience, her education, and her skills as a full stack developer.",
+  fr: "Une bio, c'est pas sérieux. Moi, je peux vous parler de ses expériences professionelles, de son éducation, et de ses compétences comme développeuse full stack."
+};
+
 const Chat = () => {
   const [language, setLanguage] = useState('en'); // Default to English
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: language === 'en' 
-      ? "Hello, I am Mélisandre's CV. I've come to life in order to represent her. I can tell you about her past professional experience, her education, and her skills as a full stack developper." 
-      : "Bonjour, je suis le CV de Mélisandre, donné souffle de vie pour la représenter. Je peux vous parler de ses expériences professionelles, de son éducation, et de ses compétences comme développeuse full stack." 
-    },
-    { role: 'assistant', content: `[Biobot] ${language === 'en' 
-      ? "Pft... CVs. What do they really know anyway? I'm Mé's bio. I'm an array of facts, not like this guy, who uses artificial intelligence to pretend he's smart." 
-      : "Pff... les CVs. Qu'est-ce qu'ils savent vraiment ? Je suis la bio de Mé. Je suis un ensemble de faits, pas comme lui, qui utilise l'intelligence artificielle pour prétendre être intelligent."}` 
-    }
+    { role: 'assistant', content: CV_INTRO_1[language] },
+    { role: 'assistant', content: `[Biobot] ${BIOBOT_INTRO[language]}` },
+    { role: 'assistant', content: CV_INTRO_2[language] }
   ]);
   const [input, setInput] = useState('');
   const [provider, setProvider] = useState(AI_PROVIDERS.OPENAI);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const [bioBotResponseIds, setBioBotResponseIds] = useState([]);
+
+  const englishQuestions = [
+    "Please tell me about Mélisandre's experience as a fullstack developer.",
+    "How do you think Mélisandre might fit into our development team?",
+    "What projects best showcase Mélisandre's versatility?",
+    "What is Mélisandre's key strength?",
+    "What is Mélisandre's favorite programming language?",
+    "What is Mélisandre's favorite framework?",
+    "What is Mélisandre's favorite database?",
+    "What is Mélisandre's favorite IDE?",
+  ];
+
+  const frenchQuestions = [
+    "Parlez-moi de l'expérience de Mélisandre en tant que développeuse fullstack.",
+    "Comment pensez-vous que Mélisandre pourrait s'intégrer dans notre équipe de développement ?",
+    "Quels projets montrent le mieux la polyvalence de Mélisandre ?",
+    "Quelle est la force clé de Mélisandre ?",
+    "Quelle est la langue de programmation favorite de Mélisandre ?",
+    "Quel est le framework favorite de Mélisandre ?",
+    "Quel est la base de données favorite de Mélisandre ?",
+    "Quel est l'IDE favorite de Mélisandre ?",
+  ];
+
+  const [potentialQuestions, setPotentialQuestions] = useState(englishQuestions);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -77,45 +112,81 @@ const Chat = () => {
 
   const handleLanguageChange = (newLanguage) => {
     setLanguage(newLanguage);
-    if (messages.length === 2) { // Changed from 1 to 2 to account for both intro messages
+    setPotentialQuestions(newLanguage === 'en' ? englishQuestions : frenchQuestions);
+    if (messages.length === 3) {
       setMessages(prevMessages => {
         const updatedMessages = [...prevMessages];
-        updatedMessages[0].content = newLanguage === 'en' 
-          ? "Hello, I am Mélisandre's CV. I've come to life in order to represent her. I can tell you about her past professional experience, her education, and her skills as a full stack developper." 
-          : "Bonjour, je suis le CV de Mélisandre, donné souffle de vie pour la représenter. Je peux vous parler de ses expériences professionelles, de son éducation, et de ses compétences comme développeuse full stack.";
-        updatedMessages[1].content = `[Biobot] ${newLanguage === 'en'
-          ? "Pft... CVs. What do they really know anyway? I'm Mé's bio. I'm an array of facts, not like this guy, who uses artificial intelligence to pretend he's smart."
-          : "Pff... les CVs. Qu'est-ce qu'ils savent vraiment ? Je suis la bio de Mé. Je suis un ensemble de faits, pas comme lui, qui utilise l'intelligence artificielle pour prétendre être intelligent."}`;
+        updatedMessages[0].content = CV_INTRO_1[newLanguage];
+        updatedMessages[1].content = `[Biobot] ${BIOBOT_INTRO[newLanguage]}`;
+        updatedMessages[2].content = CV_INTRO_2[newLanguage];
         return updatedMessages;
       });
     }
   };
 
+  const handleQuestionClick = (question) => {
+    const userMessage = { role: 'user', content: question };
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+
+    handleChatResponses(
+      [...messages, userMessage],
+      provider,
+      {
+        max_tokens: 150,
+        temperature: 0.7,
+      },
+      language,
+      bioBotResponseIds,
+      setMessages,
+      setBioBotResponseIds
+    ).finally(() => setIsLoading(false));
+
+    const questionIndex = potentialQuestions.indexOf(question);
+    if (questionIndex !== -1) {
+      const newQuestions = [...potentialQuestions];
+      newQuestions.splice(questionIndex, 1);
+
+      // Remove the equivalent question from the other language array
+      if (language === 'en') {
+        frenchQuestions.splice(questionIndex, 1);
+      } else {
+        englishQuestions.splice(questionIndex, 1);
+      }
+
+      setPotentialQuestions(newQuestions);
+    }
+  };
+
   return (
     <Container maxWidth="md">
-      <Box sx={{ height: '100vh', py: 2, display: 'flex', flexDirection: 'column' }}>
-        <FormControl component="fieldset" sx={{ mb: 2 }}>
-          <RadioGroup
-            row
-            value={language}
-            onChange={(e) => handleLanguageChange(e.target.value)}
-          >
-            <FormControlLabel value="en" control={<Radio />} label="English" />
-            <FormControlLabel value="fr" control={<Radio />} label="Français" />
-          </RadioGroup>
-        </FormControl>
+      <Box sx={{ height: 'calc(100vh - 35px)', py: 2, display: 'flex', flexDirection: 'column' }}>
+        
+        {/* Aligning AI and Language Selectors Side by Side */}
+        <Box sx={{ display: 'flex', mb: 2, gap: 2 }}>
+          <FormControl component="fieldset">
+            <RadioGroup
+              row
+              value={language}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+            >
+              <FormControlLabel value="en" control={<Radio />} label="English" />
+              <FormControlLabel value="fr" control={<Radio />} label="Français" />
+            </RadioGroup>
+          </FormControl>
 
-        <FormControl sx={{ mb: 2, minWidth: 120 }}>
-          <InputLabel>{language === 'en' ? "AI Provider" : "Fournisseur d'IA"}</InputLabel>
-          <Select
-            value={provider}
-            label={language === 'en' ? "AI Provider" : "Fournisseur d'IA"}
-            onChange={(e) => setProvider(e.target.value)}
-          >
-            <MenuItem value={AI_PROVIDERS.OPENAI}>OpenAI</MenuItem>
-            <MenuItem value={AI_PROVIDERS.DEEPSEEK}>DeepSeek</MenuItem>
-          </Select>
-        </FormControl>
+          <FormControl sx={{ minWidth: 120 }}>
+            <InputLabel>{language === 'en' ? "AI Provider" : "Fournisseur d'IA"}</InputLabel>
+            <Select
+              value={provider}
+              label={language === 'en' ? "AI Provider" : "Fournisseur d'IA"}
+              onChange={(e) => setProvider(e.target.value)}
+            >
+              <MenuItem value={AI_PROVIDERS.OPENAI}>OpenAI</MenuItem>
+              <MenuItem value={AI_PROVIDERS.DEEPSEEK}>DeepSeek</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
 
         <Paper 
           elevation={3} 
@@ -130,30 +201,52 @@ const Chat = () => {
           {messages.map((message, index) => {
             const isBiobot = message.content.startsWith('[Biobot]');
             const displayContent = isBiobot ? message.content.replace('[Biobot] ', '') : message.content;
+            const label = message.role === 'user' ? 'User' : isBiobot ? 'Bio' : 'CV';
 
             return (
               <Box 
                 key={index}
                 sx={{
                   mb: 2,
-                  textAlign: message.role === 'user' ? 'right' : 'left'
+                  textAlign: message.role === 'user' ? 'center' : (isBiobot ? 'right' : 'left'),
                 }}
               >
-                <Typography
-                  sx={{
-                    display: 'inline-block',
-                    bgcolor: message.role === 'user' 
-                      ? '#e3f2fd' 
-                      : isBiobot
-                          ? '#f3e5f5'  // Light purple for biobot
-                          : '#fff',    // White for assistant
-                    p: 1,
-                    borderRadius: 1,
-                    maxWidth: '70%'
-                  }}
-                >
-                  {displayContent}
-                </Typography>
+                {message.role === 'user' ? (
+                  <Typography
+                    sx={{
+                      fontStyle: 'italic',
+                      fontSize: '1.5rem',
+                      color: 'grey',
+                      textTransform: 'uppercase',
+                      maxWidth: '70%',
+                      display: 'inline-block',
+                      mt: 2,
+                    }}
+                  >
+                    {displayContent}
+                  </Typography>
+                ) : (
+                  <>
+                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 'bold' }}>
+                      {label}
+                    </Typography>
+                    <Typography
+                      sx={{
+                        display: 'inline-block',
+                        bgcolor: message.role === 'user' 
+                          ? '#e3f2fd' 
+                          : isBiobot
+                              ? '#f3e5f5'
+                              : '#fff',
+                        p: 1,
+                        borderRadius: 1,
+                        maxWidth: '70%'
+                      }}
+                    >
+                      {displayContent}
+                    </Typography>
+                  </>
+                )}
               </Box>
             );
           })}
@@ -176,6 +269,19 @@ const Chat = () => {
           >
             {language === 'en' ? 'Send' : 'Soumettre'}
           </Button>
+        </Box>
+
+        {/* Adding a Section for Potential Questions */}
+        <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, mt: 2 }}>
+          {potentialQuestions.slice(0, 3).map((question, index) => (
+            <Button 
+              key={index} 
+              variant="outlined" 
+              onClick={() => handleQuestionClick(question)}
+            >
+              {question}
+            </Button>
+          ))}
         </Box>
       </Box>
     </Container>
