@@ -170,8 +170,8 @@ const Chat = () => {
               value={language}
               onChange={(e) => handleLanguageChange(e.target.value)}
             >
-              <FormControlLabel value="en" control={<Radio />} label="English" />
-              <FormControlLabel value="fr" control={<Radio />} label="Français" />
+              <FormControlLabel value="en" control={<Radio />} label="En" />
+              <FormControlLabel value="fr" control={<Radio />} label="Fr" />
             </RadioGroup>
           </FormControl>
 
@@ -220,7 +220,7 @@ const Chat = () => {
                       textTransform: 'uppercase',
                       maxWidth: '70%',
                       display: 'inline-block',
-                      mt: 2,
+                      mt: 4,
                     }}
                   >
                     {displayContent}
@@ -233,11 +233,7 @@ const Chat = () => {
                     <Typography
                       sx={{
                         display: 'inline-block',
-                        bgcolor: message.role === 'user' 
-                          ? '#e3f2fd' 
-                          : isBiobot
-                              ? '#f3e5f5'
-                              : '#fff',
+                        bgcolor: isBiobot ? '#f3e5f5' : '#fff',
                         p: 1,
                         borderRadius: 1,
                         maxWidth: '70%'
