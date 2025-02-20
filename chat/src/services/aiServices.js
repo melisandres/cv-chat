@@ -7,9 +7,7 @@ export const AI_PROVIDERS = {
 
 // Create a configured axios instance
 const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'production' 
-    ? process.env.REACT_APP_API_URL_PROD
-    : 'http://127.0.0.1:8000/api',
+  baseURL: process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api',
   withCredentials: true,
   headers: {
     'Accept': 'application/json',
