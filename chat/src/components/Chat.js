@@ -45,27 +45,38 @@ const Chat = () => {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const [bioBotResponseIds, setBioBotResponseIds] = useState([]);
+  const [usedQuestionIndices, setUsedQuestionIndices] = useState([]); // Track used question indices
+  const [questionPage, setQuestionPage] = useState(0);
+  const questionsPerPage = 3;
 
   const englishQuestions = [
-    "Please tell me about Mélisandre's experience as a fullstack developer.",
+    "Describe Mélisandre's work experience.",
+    "Where can I see her work?",
+    "Sum up Mélisandre in 10 words.",
+    "A Haiku cv poem?",
     "How do you think Mélisandre might fit into our development team?",
     "What projects best showcase Mélisandre's versatility?",
     "What is Mélisandre's key strength?",
-    "What is Mélisandre's favorite programming language?",
-    "What is Mélisandre's favorite framework?",
-    "What is Mélisandre's favorite database?",
-    "What is Mélisandre's favorite IDE?",
+    "Can you tell me about yourself?",
+    "Tell me about Mélisandre's education.",
+    "What might Mélisandre say is her greatest achievement?",
+    "Describe Mélisandre's work style.",
+    "What do I keep hearing about narrative and why?",
   ];
 
   const frenchQuestions = [
-    "Parlez-moi de l'expérience de Mélisandre en tant que développeuse fullstack.",
-    "Comment pensez-vous que Mélisandre pourrait s'intégrer dans notre équipe de développement ?",
-    "Quels projets montrent le mieux la polyvalence de Mélisandre ?",
-    "Quelle est la force clé de Mélisandre ?",
-    "Quelle est la langue de programmation favorite de Mélisandre ?",
-    "Quel est le framework favorite de Mélisandre ?",
-    "Quel est la base de données favorite de Mélisandre ?",
-    "Quel est l'IDE favorite de Mélisandre ?",
+    "Parlez-moi de l'expérience de travail de Mélisandre.",
+    "Où puis-je voir son travail?",
+    "Résumez Mélisandre en 10 mots.",
+    "Un poème haïku sur le cv?",
+    "Comment pensez-vous que Mélisandre pourrait s'intégrer dans notre équipe de développement?",
+    "Quels projets montrent le mieux la polyvalence de Mélisandre?",
+    "Quelle est la force clé de Mélisandre?",
+    "Parlez-moi de vous-même.",
+    "Que pensez-vous que Mélisandre dirait de son plus grand accomplissement?",
+    "Décrivez le style de travail de Mélisandre.",
+    "Mélisandre semble-t-elle plus à l'aise sur le front-end ou sur le back-end?",
+    "Pourquoi parlez-vous de la narration?",
   ];
 
   const [potentialQuestions, setPotentialQuestions] = useState(englishQuestions);
@@ -77,6 +88,15 @@ const Chat = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    // Update potential questions when language changes, excluding used questions
+    const availableQuestions = language === 'en' 
+      ? englishQuestions.filter((_, index) => !usedQuestionIndices.includes(index))
+      : frenchQuestions.filter((_, index) => !usedQuestionIndices.includes(index));
+    
+    setPotentialQuestions(availableQuestions);
+  }, [language, usedQuestionIndices]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -110,9 +130,47 @@ const Chat = () => {
     setIsLoading(false);
   };
 
+  const handleQuestionClick = async (question) => {
+    const userMessage = { role: 'user', content: question };
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+
+    try {
+      await handleChatResponses(
+        [...messages, userMessage],
+        provider,
+        {
+        max_tokens: 150,
+        temperature: 0.7,
+      },
+      language,
+      bioBotResponseIds,
+      setMessages,
+        setBioBotResponseIds
+      ).finally(() => setIsLoading(false));
+    } catch (error) {
+      console.error('Error in handleQuestionClick:', error);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: language === 'en' ? 'Sorry, I encountered an error. Please try again.' : 'Désolé, j\'ai rencontré une erreur. Veuillez réessayer.' 
+      }]);
+    }
+
+    // Find the index of the question in the current language array
+    const questionIndex = language === 'en' 
+      ? englishQuestions.indexOf(question) 
+      : frenchQuestions.indexOf(question);
+    
+    if (questionIndex !== -1 && !usedQuestionIndices.includes(questionIndex)) {
+      // Add this index to used questions
+      setUsedQuestionIndices(prev => [...prev, questionIndex]);
+    }
+  };
+
+
   const handleLanguageChange = (newLanguage) => {
     setLanguage(newLanguage);
-    setPotentialQuestions(newLanguage === 'en' ? englishQuestions : frenchQuestions);
+    
     if (messages.length === 3) {
       setMessages(prevMessages => {
         const updatedMessages = [...prevMessages];
@@ -124,38 +182,13 @@ const Chat = () => {
     }
   };
 
-  const handleQuestionClick = (question) => {
-    const userMessage = { role: 'user', content: question };
-    setMessages(prev => [...prev, userMessage]);
-    setIsLoading(true);
+  const handleNextQuestions = () => {
+    const maxPage = Math.ceil(potentialQuestions.length / questionsPerPage) - 1;
+    setQuestionPage(prev => Math.min(prev + 1, maxPage));
+  };
 
-    handleChatResponses(
-      [...messages, userMessage],
-      provider,
-      {
-        max_tokens: 150,
-        temperature: 0.7,
-      },
-      language,
-      bioBotResponseIds,
-      setMessages,
-      setBioBotResponseIds
-    ).finally(() => setIsLoading(false));
-
-    const questionIndex = potentialQuestions.indexOf(question);
-    if (questionIndex !== -1) {
-      const newQuestions = [...potentialQuestions];
-      newQuestions.splice(questionIndex, 1);
-
-      // Remove the equivalent question from the other language array
-      if (language === 'en') {
-        frenchQuestions.splice(questionIndex, 1);
-      } else {
-        englishQuestions.splice(questionIndex, 1);
-      }
-
-      setPotentialQuestions(newQuestions);
-    }
+  const handlePrevQuestions = () => {
+    setQuestionPage(prev => Math.max(prev - 1, 0));
   };
 
   return (
@@ -175,7 +208,7 @@ const Chat = () => {
             </RadioGroup>
           </FormControl>
 
-          <FormControl sx={{ minWidth: 120 }}>
+{/*           <FormControl sx={{ minWidth: 120 }}>
             <InputLabel>{language === 'en' ? "AI Provider" : "Fournisseur d'IA"}</InputLabel>
             <Select
               value={provider}
@@ -185,7 +218,7 @@ const Chat = () => {
               <MenuItem value={AI_PROVIDERS.OPENAI}>OpenAI</MenuItem>
               <MenuItem value={AI_PROVIDERS.DEEPSEEK}>DeepSeek</MenuItem>
             </Select>
-          </FormControl>
+          </FormControl> */}
         </Box>
 
         <Paper 
@@ -267,18 +300,87 @@ const Chat = () => {
           </Button>
         </Box>
 
-        {/* Adding a Section for Potential Questions */}
-        <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, mt: 2 }}>
-          {potentialQuestions.slice(0, 3).map((question, index) => (
-            <Button 
-              key={index} 
-              variant="outlined" 
-              onClick={() => handleQuestionClick(question)}
-            >
-              {question}
-            </Button>
-          ))}
+        {/* Modified Questions Section with Navigation Arrows */}
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: 'row', 
+          gap: 1, 
+          mt: 2, 
+          alignItems: 'center',
+          width: '100%',
+          px: { xs: 0, sm: 0 }, // Remove any horizontal padding at small sizes
+          mx: 0 // Ensure no margin is applied
+        }}>
+          <Button 
+            onClick={handlePrevQuestions}
+            disabled={questionPage === 0 || potentialQuestions.length <= questionsPerPage}
+            sx={{ 
+              minWidth: { xs: '30px', sm: '35px' }, 
+              p: { xs: 0.5, sm: 1 },
+              flex: '0 0 auto' // Prevent shrinking
+            }}
+          >
+            ←
+          </Button>
+          
+          <Box sx={{ 
+            display: 'flex', 
+            flex: 1, 
+            gap: 1, 
+            justifyContent: 'space-between',
+            width: '100%',
+            overflow: 'hidden' // Prevent overflow
+          }}>
+            {potentialQuestions
+              .slice(questionPage * questionsPerPage, (questionPage + 1) * questionsPerPage)
+              .map((question, index) => (
+                <Button 
+                  key={index} 
+                  variant="outlined" 
+                  onClick={() => handleQuestionClick(question)}
+                  sx={{ 
+                    flex: 1,
+                    minWidth: 0, // Allow buttons to shrink below their content size
+                    whiteSpace: 'normal', 
+                    overflow: 'hidden', 
+                    textOverflow: 'ellipsis',
+                    fontSize: 'clamp(0.2rem, 0.4vw + 0.4rem, 0.8rem)',
+                    px: { xs: 0.5, sm: 1 }, // Reduce padding on small screens
+                  }} 
+                >
+                  {question}
+                </Button>
+              ))}
+              
+            {potentialQuestions.length < questionsPerPage && 
+              Array(questionsPerPage - potentialQuestions.length).fill(0).map((_, i) => (
+                <Box key={i} sx={{ flex: 1 }} />
+              ))
+            }
+          </Box>
+          
+          <Button 
+            onClick={handleNextQuestions}
+            disabled={
+              questionPage >= Math.ceil(potentialQuestions.length / questionsPerPage) - 1 || 
+              potentialQuestions.length <= questionsPerPage
+            }
+            sx={{ 
+              minWidth: { xs: '30px', sm: '40px' }, 
+              p: { xs: 0.5, sm: 1 },
+              flex: '0 0 auto' // Prevent shrinking
+            }}
+          >
+            →
+          </Button>
         </Box>
+        
+        {/* Page indicator */}
+{/*         {potentialQuestions.length > questionsPerPage && (
+          <Typography variant="caption" sx={{ textAlign: 'center', display: 'block', mt: 1 }}>
+            {language === 'en' ? '? prefab ?' : '? toutes faites ?'} {questionPage + 1} / {Math.ceil(potentialQuestions.length / questionsPerPage)}
+          </Typography>
+        )} */}
       </Box>
     </Container>
   );

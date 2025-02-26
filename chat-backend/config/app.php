@@ -52,7 +52,8 @@ return [
     |
     */
 
-    'url' => env('APP_URL', 'http://localhost'),
+    'url' => env('APP_URL', 'https://la-fin.org/chat-backend'),
+    'asset_url' => env('ASSET_URL', '/chat-backend'),
 
     /*
     |--------------------------------------------------------------------------

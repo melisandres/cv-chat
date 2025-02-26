@@ -127,21 +127,36 @@ export const handleChatResponses = async (
     console.log('Sending request to getBiobotResponse...');
     const lastUserMessage = messages[messages.length - 1].content;
     const biobotResponse = await getBiobotResponse(lastUserMessage, bioBotResponseIds, language);
+    let newBioBotResponseIds = bioBotResponseIds;
 
     if (biobotResponse.biobotResponse && biobotResponse.biobotResponse.content) {
       console.log('Biobot response received:', biobotResponse.biobotResponse.content);
       updateMessages(prev => [...prev, { role: 'assistant', content: `[Biobot] ${biobotResponse.biobotResponse.content}` }]);
       updateBioBotResponseIds(biobotResponse.bioBotResponseIds);
+      newBioBotResponseIds = biobotResponse.bioBotResponseIds;
     } else {
       console.log('No valid biobot response received.');
     }
 
+    // Send updated messages to cvAi
     console.log('Sending request to getCvAiResponse...');
-    const cvAiResponse = await getCvAiResponse(messages, provider, parameters, language);
+    const cvAiResponse = await getCvAiResponse([...messages, { role: 'assistant', content: `[Biobot] ${biobotResponse.biobotResponse.content}` }], provider, parameters, language);
 
     if (cvAiResponse.aiResponse) {
       console.log('cvAi response received:', cvAiResponse.aiResponse);
       updateMessages(prev => [...prev, { role: 'assistant', content: cvAiResponse.aiResponse }]);
+    }
+
+    // Make a final call to the biobot with updated messages and bioBotResponseIds
+    console.log('Sending final request to getBiobotResponse...');
+    const finalBiobotResponse = await getBiobotResponse(cvAiResponse.aiResponse, newBioBotResponseIds, language);
+
+    if (finalBiobotResponse.biobotResponse && finalBiobotResponse.biobotResponse.content) {
+      console.log('Final Biobot response received:', finalBiobotResponse.biobotResponse.content);
+      updateMessages(prev => [...prev, { role: 'assistant', content: `[Biobot] ${finalBiobotResponse.biobotResponse.content}` }]);
+      updateBioBotResponseIds(finalBiobotResponse.bioBotResponseIds);
+    } else {
+      console.log('No valid final biobot response received.');
     }
   } catch (error) {
     console.error('Error in handleChatResponses:', error);

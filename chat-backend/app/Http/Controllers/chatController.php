@@ -12,7 +12,7 @@ class ChatController extends Controller
     private $deepseekUrl = 'https://api.deepseek.ai/v1/chat/completions';
 
 
-    public function chat(Request $request)
+    /* public function chat(Request $request)
     {
         $provider = $request->input('provider', 'openai');
         $personality = $request->input('personality', 'default');
@@ -31,10 +31,8 @@ class ChatController extends Controller
         $biobotResponse = $this->biobotParser($lastUserMessage, $bioBotResponseIds, $language);
         
         // Handle the biobot response content
-        if(isSet($biobotResponse['content']) && isSet($biobotResponse['id'])) {
-            // Use 'assistant' role for biobot response
+        if (isset($biobotResponse['content']) && isset($biobotResponse['id'])) {
             $responses[] = ['role' => 'assistant', 'content' => "[Biobot] " . $biobotResponse['content']];
-            // Add the biobot response index to the response array
             $bioBotResponseIds[] = $biobotResponse['id'];
         }
 
@@ -68,7 +66,73 @@ class ChatController extends Controller
             ], 500);
         }
     }
+ */
 
+    public function biobotResponse(Request $request)
+    {
+        $input = $request->input('input');
+        $bioBotResponseIds = $request->input('bioBotResponseIds', []);
+        $language = $request->input('language', 'en');
+        $provider = $request->input('provider', 'openai');
+        $parameters = $request->input('parameters', []);
+        $useAiEnhancement = $request->input('useAiEnhancement', true);
+
+        // Get the raw biobot response
+        $biobotResponse = $this->biobotParser($input, $bioBotResponseIds, $language);
+
+        // If we found a match and AI enhancement is enabled
+        if ($biobotResponse['found'] && $useAiEnhancement && !empty($biobotResponse['content'])) {
+            // Prepare messages for the biobot AI
+            $aiMessages = $this->prepareAiMessages(
+                [['role' => 'user', 'content' => $biobotResponse['content']]], 
+                'default', 
+                $language, 
+                null, 
+                'biobotAi'
+            );
+            
+            // Send to AI for enhancement
+            try {
+                $enhancedContent = $this->sendQueryToAi($aiMessages, $provider, $parameters);
+                $biobotResponse['content'] = $enhancedContent;
+            } catch (\Exception $e) {
+                Log::error('Biobot AI enhancement error: ' . $e->getMessage());
+                // If AI enhancement fails, we'll use the original content (already set)
+            }
+        }
+
+        // Update the response IDs if we found a match
+        if ($biobotResponse['id']) {
+            $bioBotResponseIds[] = $biobotResponse['id'];
+        }
+
+        // Clean up the response before sending
+        $responseData = [
+            'biobotResponse' => [
+                'id' => $biobotResponse['id'],
+                'content' => $biobotResponse['found'] ? $biobotResponse['content'] : ''
+            ],
+            'bioBotResponseIds' => $bioBotResponseIds
+        ];
+
+        return response()->json($responseData);
+    }
+
+    public function cvAiResponse(Request $request)
+    {
+        $messages = $request->input('messages', []);
+        $provider = $request->input('provider', 'openai');
+        $parameters = $request->input('parameters', []);
+        $language = $request->input('language', 'en');
+
+        $aiMessages = $this->prepareAiMessages($messages, 'default', $language);
+        $aiResponse = $this->sendQueryToAi($aiMessages, $provider, $parameters);
+
+        return response()->json([
+            'aiResponse' => $aiResponse
+        ]);
+    }
+    //TODO: this needs to be cleaned up, so that the prompt parts are clearer, and... this is not for either AI, but really specifically for the cvAI. 
     private function prepareAiMessages($userMessages, $personality, $language, $biobotResponse = null, $aiType = 'cvAi')
     {
         $personalityConfig = config('ai_personalities')[$aiType];
@@ -86,11 +150,11 @@ class ChatController extends Controller
             ],
         ];
 
-        // Add biobot instruction only for cvAi
-        if ($aiType === 'cvAi' && isset($personalityConfig['biobot_instruction'])) {
+        // Add other bot instruction if it exists
+        if (isset($personalityConfig['other_bot_instruction'])) {
             $aiMessages[] = [
                 'role' => 'system',
-                'content' => $personalityConfig['biobot_instruction']
+                'content' => $personalityConfig['other_bot_instruction']
             ];
         }
 
@@ -118,7 +182,7 @@ class ChatController extends Controller
         $aiMessages = array_merge($aiMessages, $userMessages);
 
         // Add biobot response if present and if it's cvAi
-        if ($aiType === 'cvAi' && isset($biobotResponse['content'])) {
+        if ($aiType === 'cvAi' && isset($biobotResponse['content']) && !empty($biobotResponse['content'])) {
             $aiMessages[] = [
                 'role' => 'assistant',
                 'content' => "[Biobot] " . $biobotResponse['content']
@@ -128,7 +192,8 @@ class ChatController extends Controller
         return $aiMessages;
     }
 
-    private function cvAi($messages, $provider = 'openai', $parameters = [])
+    //TODO: this name is misleading... this is to send AI messages. It might be good to study if this can work with either AI (cvAi or bioBot)
+    private function sendQueryToAi($messages, $provider = 'openai', $parameters = [])
     {
         $apiKey = $provider === 'openai' 
             ? env('OPENAI_API_KEY') 
@@ -163,130 +228,74 @@ class ChatController extends Controller
         if (Storage::disk('contexts')->exists('biographical_blurts_' . $language . '.json')) {
             $biographicalBlurts = json_decode(Storage::disk('contexts')->get('biographical_blurts_' . $language . '.json'), true);
         }
-        /* Log::info('Biographical blurts: ', $biographicalBlurts); */
 
-        $biobotResponse = [];
-        /* Log::info('Using biobot indices: ', $usedIds); */
+        $biobotResponse = [
+            'id' => null,
+            'content' => '',
+            'found' => false  // Add this flag to indicate if a match was found
+        ];
 
         foreach ($biographicalBlurts as $item) {
             // Skip this entire biographical blurt if ID was used
             if (in_array($item['id'], $usedIds)) {
-                /* Log::info('Biobot ID ' . $item['id'] . ' already used'); */
                 continue;
             }
 
-            $keywordFound = false;
             foreach ($item['keywords'] as $keyword) {
-                /* Log::info('Checking keyword: ' . $keyword); */
                 if (stripos($input, $keyword) !== false) {
-                    /* Log::info('Keyword found in input'); */
                     $biobotResponse = [
                         'id' => $item['id'],
-                        'content' => $item['thought']
+                        'content' => $item['thought'],
+                        'found' => true  // Set to true when we find a match
                     ];
-                    $keywordFound = true;
-                    break;
+                    break 2;  // Break out of both loops
                 }
-            }
-            
-            if ($keywordFound) {
-                break;
             }
         }
         return $biobotResponse;
     }
 
-    public function biobotResponse(Request $request)
+
+
+    public function testAiPayload()
     {
-        $input = $request->input('input');
-        $bioBotResponseIds = $request->input('bioBotResponseIds', []);
-        $language = $request->input('language', 'en');
+        try {
+            // Test basic environment variables
+            $envTest = [
+                'app_url' => env('APP_URL'),
+                'cors_allowed_origins' => env('CORS_ALLOWED_ORIGINS'),
+                'sanctum_stateful_domains' => env('SANCTUM_STATEFUL_DOMAINS'),
+            ];
 
-        $biobotResponse = $this->biobotParser($input, $bioBotResponseIds, $language);
-
-        if (isset($biobotResponse['id'])) {
-            $bioBotResponseIds[] = $biobotResponse['id']; // Add the new ID to the array
-        }
-
-        return response()->json([
-            'biobotResponse' => $biobotResponse,
-            'bioBotResponseIds' => $bioBotResponseIds
-        ]);
-    }
-
-    public function cvAiResponse(Request $request)
-    {
-        $messages = $request->input('messages', []);
-        $provider = $request->input('provider', 'openai');
-        $parameters = $request->input('parameters', []);
-        $language = $request->input('language', 'en');
-
-        $aiMessages = $this->prepareAiMessages($messages, 'default', $language);
-        $aiResponse = $this->cvAi($aiMessages, $provider, $parameters);
-
-        return response()->json([
-            'aiResponse' => $aiResponse
-        ]);
-    }
-
-    /* public function testAiPayload(Request $request)
-    {
-        // Get basic config
-        $personalityConfig = config('ai_personalities');
-        $personality = $request->input('personality', 'default');
-        
-        // Debug file path information
-        $contextPath = storage_path("app/contexts/{$personality}_{'en'}.txt");
-        $fileExists = Storage::disk('contexts')->exists("{$personality}_{'en'}.txt");
-
-        //biobotparser
-        $biobotMessages = $this->biobotParser('I have a dream', [], 'en');
-
-        // Merge Biobot messages with the user conversation
-        $AImessages = array_merge(['role' => 'biobot', 'content' => 'Hello, who are ...'], $biobotMessages);
-
-        // Try to get context file content
-        $contextContent = '';
-        if ($fileExists) {
-            $contextContent = Storage::disk('contexts')->get("{$personality}_{'en'}.txt");
-        }
-
-        // Create system message with context
-        $systemMessage = $personalityConfig['system_message'];
-        if ($contextContent) {
-            $systemMessage['content'] .= "\n\nAdditional Context:\n" . $contextContent;
-        }
-
-        // Create test message array
-        $messages = [
-            $systemMessage,
-            ['role' => 'user', 'content' => $AImessages]
-        ];
-
-        // Create the full payload that would be sent to OpenAI
-        $payload = [
-            'model' => 'gpt-3.5-turbo',
-            'messages' => $messages,
-            'temperature' => $personalityConfig['parameters']['temperature'],
-            'max_tokens' => $personalityConfig['parameters']['max_tokens']
-        ];
-
-        // Return the payload for inspection with debug info
-        return response()->json([
-            'full_payload' => $payload,
-            'system_message_only' => $systemMessage,
-            'context_file_content' => $contextContent,
-            'personality_config' => $personalityConfig,
-            'debug' => [
-                'personality' => $personality,
-                'full_context_path' => $contextPath,
-                'file_exists' => $fileExists,
+            // Test file paths
+            $pathTest = [
                 'storage_path' => storage_path(),
-                'contextsStorage_exists' => is_dir(storage_path('app/contexts')),
-                'raw_file_exists' => file_exists($contextPath),
-                'storage_disk_contents' => Storage::disk('contexts')->files(),
-                'storage_directories' => Storage::disk('contexts')->directories(),
-            ]
-        ], 200, [], JSON_PRETTY_PRINT);
-    } */
+                'public_path' => public_path(),
+                'base_path' => base_path(),
+            ];
+
+            // Test route configuration
+            $routeTest = [
+                'current_url' => request()->fullUrl(),
+                'base_url' => url('/'),
+                'is_https' => request()->secure(),
+            ];
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Test endpoint reached successfully',
+                'environment' => $envTest,
+                'paths' => $pathTest,
+                'route' => $routeTest,
+                'headers' => request()->headers->all(),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ], 500);
+        }
+    }
 }
